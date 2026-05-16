@@ -99,7 +99,6 @@
 
     <script type="module">
       import * as THREE from 'three';
-      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
 
       const viewport = document.getElementById('viewport');
@@ -117,10 +116,6 @@
 
       const camera = new THREE.PerspectiveCamera(52, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
       camera.position.set(0, 0.4, 2.4);
-
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.target.set(0, 0, 0);
 
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
       scene.add(ambientLight);
@@ -158,20 +153,75 @@
 
       const frontMesh = new THREE.Mesh(planeGeometry, frontMaterial);
       const backMesh = new THREE.Mesh(planeGeometry, backMaterial);
-      scene.add(frontMesh);
-      scene.add(backMesh);
+      const sheetGroup = new THREE.Group();
+      sheetGroup.add(frontMesh);
+      sheetGroup.add(backMesh);
+      scene.add(sheetGroup);
 
       const options = {
         ambientIntensity: ambientLight.intensity,
         lightX: directionalLight.position.x,
         lightY: directionalLight.position.y,
         lightZ: directionalLight.position.z,
-        flexAmount: 0.09,
-        waveSpeed: 1,
-        waveScale: 2.5,
+        preset: 'Soft Paper',
+        maxBend: 0.12,
+        springStiffness: 12,
+        springDamping: 5.5,
+        returnStiffness: 6,
+        edgeDriveGain: 0.11,
+        edgeExponent: 1.25,
+        dragRotateGain: 0.008,
+        inputVelocityDamping: 5.5,
+      };
+
+      const presets = {
+        'Soft Paper': {
+          maxBend: 0.12,
+          springStiffness: 12,
+          springDamping: 5.5,
+          returnStiffness: 6,
+          edgeDriveGain: 0.11,
+          edgeExponent: 1.25,
+          dragRotateGain: 0.008,
+          inputVelocityDamping: 5.5,
+        },
+        'Soft Fabric': {
+          maxBend: 0.18,
+          springStiffness: 8,
+          springDamping: 7.5,
+          returnStiffness: 4,
+          edgeDriveGain: 0.14,
+          edgeExponent: 1.08,
+          dragRotateGain: 0.01,
+          inputVelocityDamping: 6.5,
+        },
+        'Stiff Card': {
+          maxBend: 0.05,
+          springStiffness: 26,
+          springDamping: 6.5,
+          returnStiffness: 14,
+          edgeDriveGain: 0.06,
+          edgeExponent: 1.45,
+          dragRotateGain: 0.006,
+          inputVelocityDamping: 7,
+        },
+      };
+
+      const applyPreset = (name) => {
+        const preset = presets[name];
+        if (!preset) {
+          return;
+        }
+
+        Object.assign(options, preset);
+        updateEdgeWeights();
+        gui.controllersRecursive().forEach((controller) => controller.updateDisplay());
       };
 
       const gui = new GUI({ title: 'Lighting + Flex Controls' });
+      gui.add(options, 'preset', Object.keys(presets)).onChange((value) => {
+        applyPreset(value);
+      });
       gui.add(options, 'ambientIntensity', 0, 2, 0.01).onChange((value) => {
         ambientLight.intensity = value;
       });
@@ -184,9 +234,15 @@
       gui.add(options, 'lightZ', -5, 5, 0.01).onChange((value) => {
         directionalLight.position.z = value;
       });
-      gui.add(options, 'flexAmount', 0, 0.25, 0.001);
-      gui.add(options, 'waveSpeed', 0, 5, 0.01);
-      gui.add(options, 'waveScale', 0.5, 8, 0.1);
+      gui.add(options, 'maxBend', 0.01, 0.2, 0.001);
+      gui.add(options, 'springStiffness', 5, 120, 1);
+      gui.add(options, 'springDamping', 1, 24, 0.1);
+      gui.add(options, 'returnStiffness', 1, 50, 0.5);
+      gui.add(options, 'edgeDriveGain', 0.005, 0.2, 0.001);
+      gui.add(options, 'edgeExponent', 1, 3, 0.05).onChange(() => {
+        updateEdgeWeights();
+      });
+      gui.add(options, 'dragRotateGain', 0.001, 0.02, 0.0005);
 
       const uploadTexture = (file, onReady) => {
         const reader = new FileReader();
@@ -225,27 +281,163 @@
         });
       });
 
-      const clock = new THREE.Clock();
+      const widthSegments = planeGeometry.parameters.widthSegments;
+      const heightSegments = planeGeometry.parameters.heightSegments;
+      const nodeCountX = widthSegments + 1;
+      const nodeCountY = heightSegments + 1;
+
       const positions = planeGeometry.attributes.position;
+      const nodeCount = positions.count;
+      const clock = new THREE.Clock();
+      const springPos = new Float32Array(nodeCount);
+      const springVel = new Float32Array(nodeCount);
+      const xDir = new Float32Array(nodeCount);
+      const yDir = new Float32Array(nodeCount);
+      const edgeWeight = new Float32Array(nodeCount);
+
+      for (let ix = 0; ix < nodeCountX; ix += 1) {
+        const t = nodeCountX > 1 ? ix / (nodeCountX - 1) : 0.5;
+        const centered = t * 2 - 1;
+        for (let iy = 0; iy < nodeCountY; iy += 1) {
+          const index = iy * nodeCountX + ix;
+          xDir[index] = Math.sign(centered);
+        }
+      }
+
+      for (let iy = 0; iy < nodeCountY; iy += 1) {
+        const t = nodeCountY > 1 ? iy / (nodeCountY - 1) : 0.5;
+        const centered = t * 2 - 1;
+        for (let ix = 0; ix < nodeCountX; ix += 1) {
+          const index = iy * nodeCountX + ix;
+          yDir[index] = Math.sign(centered);
+        }
+      }
+
+      const computeEdgeWeight = (index) => {
+        const ix = index % nodeCountX;
+        const iy = Math.floor(index / nodeCountX);
+        const xT = nodeCountX > 1 ? ix / (nodeCountX - 1) : 0.5;
+        const yT = nodeCountY > 1 ? iy / (nodeCountY - 1) : 0.5;
+        const xDistance = Math.abs(xT * 2 - 1);
+        const yDistance = Math.abs(yT * 2 - 1);
+        return Math.pow(Math.max(xDistance, yDistance), options.edgeExponent);
+      };
+
+      const computeCenterAnchorWeight = (index) => 1 - computeEdgeWeight(index);
+
+      const centerAnchorWeight = new Float32Array(nodeCount);
+
+      function updateEdgeWeights() {
+        for (let index = 0; index < nodeCount; index += 1) {
+          edgeWeight[index] = computeEdgeWeight(index);
+          centerAnchorWeight[index] = computeCenterAnchorWeight(index);
+        }
+      }
+      updateEdgeWeights();
+
+      applyPreset(options.preset);
+
+      let isDraggingSheet = false;
+      let lastPointerX = 0;
+      let lastPointerY = 0;
+      let lastPointerTime = 0;
+      let inputAngularVelocityX = 0;
+      let inputAngularVelocityY = 0;
+
+      renderer.domElement.addEventListener('pointerdown', (event) => {
+        isDraggingSheet = true;
+        lastPointerX = event.clientX;
+        lastPointerY = event.clientY;
+        lastPointerTime = performance.now();
+        renderer.domElement.setPointerCapture(event.pointerId);
+      });
+
+      renderer.domElement.addEventListener('pointermove', (event) => {
+        if (!isDraggingSheet) {
+          return;
+        }
+
+        const now = performance.now();
+        const dt = Math.max((now - lastPointerTime) / 1000, 1 / 240);
+        const dx = event.clientX - lastPointerX;
+        const dy = event.clientY - lastPointerY;
+
+        const deltaRotY = dx * options.dragRotateGain;
+        const deltaRotX = dy * options.dragRotateGain;
+
+        sheetGroup.rotation.y += deltaRotY;
+        sheetGroup.rotation.x = THREE.MathUtils.clamp(sheetGroup.rotation.x + deltaRotX, -1.25, 1.25);
+
+        inputAngularVelocityY = THREE.MathUtils.lerp(inputAngularVelocityY, deltaRotY / dt, 0.45);
+        inputAngularVelocityX = THREE.MathUtils.lerp(inputAngularVelocityX, deltaRotX / dt, 0.45);
+
+        lastPointerX = event.clientX;
+        lastPointerY = event.clientY;
+        lastPointerTime = now;
+      });
+
+      const endPointerInteraction = (event) => {
+        if (!isDraggingSheet) {
+          return;
+        }
+        isDraggingSheet = false;
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        }
+      };
+
+      renderer.domElement.addEventListener('pointerup', endPointerInteraction);
+      renderer.domElement.addEventListener('pointercancel', endPointerInteraction);
 
       const animate = () => {
-        const elapsed = clock.getElapsedTime() * options.waveSpeed;
+        const delta = Math.min(clock.getDelta(), 1 / 20);
+
+        if (!isDraggingSheet) {
+          const velocityDecay = Math.exp(-options.inputVelocityDamping * delta);
+          inputAngularVelocityX *= velocityDecay;
+          inputAngularVelocityY *= velocityDecay;
+        }
+
+        for (let iy = 0; iy < nodeCountY; iy += 1) {
+          for (let ix = 0; ix < nodeCountX; ix += 1) {
+            const index = iy * nodeCountX + ix;
+            const center = springPos[index];
+            const left = ix > 0 ? springPos[index - 1] - center : 0;
+            const right = ix < nodeCountX - 1 ? springPos[index + 1] - center : 0;
+            const down = iy > 0 ? springPos[index - nodeCountX] - center : 0;
+            const up = iy < nodeCountY - 1 ? springPos[index + nodeCountX] - center : 0;
+            const edgeDrive = edgeWeight[index] **  1.4;
+            const centerAnchor = centerAnchorWeight[index] ** 1.3;
+
+            const driveX = -inputAngularVelocityY * xDir[index];
+            const driveY = inputAngularVelocityX * yDir[index];
+
+            const drive = (driveX + driveY) * edgeDrive * options.edgeDriveGain;
+            const neighborCoupling = options.springStiffness * (0.35 + 0.65 * edgeDrive);
+            const anchorCoupling = options.returnStiffness * (0.15 + 0.85 * centerAnchor);
+            const acceleration =
+              neighborCoupling * (left + right + down + up) -
+              options.springDamping * springVel[index] -
+              // anchorCoupling * center +
+              drive;
+
+            springVel[index] += acceleration * delta;
+            springPos[index] = THREE.MathUtils.clamp(
+              center + springVel[index] * delta,
+              -options.maxBend,
+              options.maxBend
+            );
+          }
+        }
 
         for (let i = 0; i < positions.count; i += 1) {
           const idx = i * 3;
-          const baseX = basePositions[idx];
-          const baseY = basePositions[idx + 1];
-          const bend =
-            Math.sin(baseX * options.waveScale + elapsed) * options.flexAmount +
-            Math.cos(baseY * options.waveScale + elapsed * 0.7) * options.flexAmount * 0.65;
-
-          positions.array[idx + 2] = bend;
+          positions.array[idx + 2] = basePositions[idx + 2] + springPos[i];
         }
 
         positions.needsUpdate = true;
         planeGeometry.computeVertexNormals();
 
-        controls.update();
         renderer.render(scene, camera);
         requestAnimationFrame(animate);
       };
