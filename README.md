@@ -15,7 +15,7 @@ Alternatives worth considering as the project grows:
 
 1. Serve the folder from a local web server (module imports require HTTP):
    ```bash
-   cd /home/runner/work/interactive-webmodel/interactive-webmodel
+   cd <project-directory>
    python3 -m http.server 8080
    ```
 2. Open `http://localhost:8080`.
