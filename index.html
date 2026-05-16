@@ -88,9 +88,18 @@
       <main id="viewport"></main>
     </div>
 
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.166.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.166.1/examples/jsm/"
+        }
+      }
+    </script>
+
     <script type="module">
-      import * as THREE from 'https://unpkg.com/three@0.166.1/build/three.module.js';
-      import { OrbitControls } from 'https://unpkg.com/three@0.166.1/examples/jsm/controls/OrbitControls.js';
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
 
       const viewport = document.getElementById('viewport');
