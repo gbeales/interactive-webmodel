@@ -418,7 +418,7 @@
             const acceleration =
               neighborCoupling * (left + right + down + up) -
               options.springDamping * springVel[index] -
-              // anchorCoupling * center +
+              anchorCoupling * center +
               drive;
 
             springVel[index] += acceleration * delta;
