@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Flexible 3D Sheet</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #0f1117;
+        color: #eef3ff;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        min-height: 100vh;
+      }
+
+      .panel {
+        padding: 16px;
+        border-right: 1px solid #2d3242;
+        background: #171b27;
+      }
+
+      .panel h1 {
+        margin: 0 0 8px;
+        font-size: 1.1rem;
+      }
+
+      .panel p {
+        margin: 0 0 12px;
+        line-height: 1.4;
+        color: #bfc8e0;
+      }
+
+      .panel label {
+        display: block;
+        margin: 12px 0 6px;
+        font-size: 0.9rem;
+      }
+
+      .panel input[type='file'] {
+        width: 100%;
+        font-size: 0.82rem;
+      }
+
+      #viewport {
+        width: 100%;
+        height: 100vh;
+      }
+
+      @media (max-width: 960px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .panel {
+          border-right: 0;
+          border-bottom: 1px solid #2d3242;
+        }
+
+        #viewport {
+          height: 70vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="panel">
+        <h1>Flexible 3D Sheet Demo</h1>
+        <p>
+          Upload front/back textures and use the floating controls in the top-right to move the
+          direct light and tune ambient illumination.
+        </p>
+        <label for="frontImage">Front face image</label>
+        <input id="frontImage" type="file" accept="image/*" />
+
+        <label for="backImage">Back face image</label>
+        <input id="backImage" type="file" accept="image/*" />
+      </aside>
+      <main id="viewport"></main>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.166.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.166.1/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm';
+
+      const viewport = document.getElementById('viewport');
+      const frontInput = document.getElementById('frontImage');
+      const backInput = document.getElementById('backImage');
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      viewport.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f1117);
+
+      const camera = new THREE.PerspectiveCamera(52, viewport.clientWidth / viewport.clientHeight, 0.1, 100);
+      camera.position.set(0, 0.4, 2.4);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.target.set(0, 0, 0);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.25);
+      directionalLight.position.set(1.2, 1.4, 1.8);
+      scene.add(directionalLight);
+
+      const fillLight = new THREE.DirectionalLight(0x8aa9ff, 0.35);
+      fillLight.position.set(-1.7, -0.8, -1.2);
+      scene.add(fillLight);
+
+      const textureLoader = new THREE.TextureLoader();
+      const defaultFrontTexture = textureLoader.load('https://picsum.photos/seed/frontface/1024/1024');
+      const defaultBackTexture = textureLoader.load('https://picsum.photos/seed/backface/1024/1024');
+      defaultFrontTexture.colorSpace = THREE.SRGBColorSpace;
+      defaultBackTexture.colorSpace = THREE.SRGBColorSpace;
+
+      const planeGeometry = new THREE.PlaneGeometry(1.8, 1.2, 80, 60);
+      const basePositions = planeGeometry.attributes.position.array.slice();
+
+      const frontMaterial = new THREE.MeshStandardMaterial({
+        map: defaultFrontTexture,
+        side: THREE.FrontSide,
+        roughness: 0.7,
+        metalness: 0.05,
+      });
+
+      const backMaterial = new THREE.MeshStandardMaterial({
+        map: defaultBackTexture,
+        side: THREE.BackSide,
+        roughness: 0.7,
+        metalness: 0.05,
+      });
+
+      const frontMesh = new THREE.Mesh(planeGeometry, frontMaterial);
+      const backMesh = new THREE.Mesh(planeGeometry, backMaterial);
+      scene.add(frontMesh);
+      scene.add(backMesh);
+
+      const options = {
+        ambientIntensity: ambientLight.intensity,
+        lightX: directionalLight.position.x,
+        lightY: directionalLight.position.y,
+        lightZ: directionalLight.position.z,
+        flexAmount: 0.09,
+        waveSpeed: 1,
+        waveScale: 2.5,
+      };
+
+      const gui = new GUI({ title: 'Lighting + Flex Controls' });
+      gui.add(options, 'ambientIntensity', 0, 2, 0.01).onChange((value) => {
+        ambientLight.intensity = value;
+      });
+      gui.add(options, 'lightX', -5, 5, 0.01).onChange((value) => {
+        directionalLight.position.x = value;
+      });
+      gui.add(options, 'lightY', -5, 5, 0.01).onChange((value) => {
+        directionalLight.position.y = value;
+      });
+      gui.add(options, 'lightZ', -5, 5, 0.01).onChange((value) => {
+        directionalLight.position.z = value;
+      });
+      gui.add(options, 'flexAmount', 0, 0.25, 0.001);
+      gui.add(options, 'waveSpeed', 0, 5, 0.01);
+      gui.add(options, 'waveScale', 0.5, 8, 0.1);
+
+      const uploadTexture = (file, onReady) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const image = new Image();
+          image.onload = () => {
+            const texture = new THREE.Texture(image);
+            texture.needsUpdate = true;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            onReady(texture);
+          };
+          image.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+
+      frontInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) {
+          return;
+        }
+        uploadTexture(file, (texture) => {
+          frontMaterial.map = texture;
+          frontMaterial.needsUpdate = true;
+        });
+      });
+
+      backInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) {
+          return;
+        }
+        uploadTexture(file, (texture) => {
+          backMaterial.map = texture;
+          backMaterial.needsUpdate = true;
+        });
+      });
+
+      const clock = new THREE.Clock();
+      const positions = planeGeometry.attributes.position;
+
+      const animate = () => {
+        const elapsed = clock.getElapsedTime() * options.waveSpeed;
+
+        for (let i = 0; i < positions.count; i += 1) {
+          const idx = i * 3;
+          const baseX = basePositions[idx];
+          const baseY = basePositions[idx + 1];
+          const bend =
+            Math.sin(baseX * options.waveScale + elapsed) * options.flexAmount +
+            Math.cos(baseY * options.waveScale + elapsed * 0.7) * options.flexAmount * 0.65;
+
+          positions.array[idx + 2] = bend;
+        }
+
+        positions.needsUpdate = true;
+        planeGeometry.computeVertexNormals();
+
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      };
+
+      animate();
+
+      const onResize = () => {
+        const { clientWidth, clientHeight } = viewport;
+        camera.aspect = clientWidth / clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(clientWidth, clientHeight);
+      };
+
+      window.addEventListener('resize', onResize);
+    </script>
+  </body>
+</html>
