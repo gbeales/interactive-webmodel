@@ -4,6 +4,12 @@
 
 This repository currently has **no configured build, lint, or automated test commands**. There is no `package.json`, test runner, or lint configuration in the repo.
 
+When constraints conflict, apply this priority order:
+
+1. Maintain the **no-build static demo** approach unless explicitly asked to introduce tooling.
+2. Use the existing **CDN ESM import** pattern unless explicitly asked to change dependency management.
+3. Preserve the **shared geometry + separate front/back materials** pattern when front/back texturing is required.
+
 To run the app locally, serve the repository root over HTTP and open the page in a browser:
 
 ```bash
@@ -23,8 +29,8 @@ Then open `http://localhost:8080`.
 
 ## Key conventions
 
-- Keep changes aligned with the current **no-build static demo** approach unless the task explicitly asks for a larger restructure or tooling setup.
-- Prefer the existing **CDN ESM import** pattern over adding local dependency management. If you change library versions, update the `importmap` and any direct CDN imports together.
+- Keep changes aligned with the current **no-build static demo** approach unless the task **explicitly states in writing** that a larger restructure or tooling setup should be introduced.
+- Use the existing **CDN ESM import** pattern unless explicitly instructed to implement local dependency management. If you change library versions, update the `importmap` and any direct CDN imports together.
 - Preserve the **shared geometry + separate front/back materials** pattern for per-face texturing. Do not collapse this to a single material if the front/back image distinction must remain.
 - File uploads currently replace `frontMaterial.map` and `backMaterial.map` independently using `FileReader` + `Image` + `THREE.Texture`. Follow that flow when extending texture upload behavior.
 - The README is meant to describe the current implementation, while `PROJECT_PLAN.md` holds recommendations and future-work ideas.
